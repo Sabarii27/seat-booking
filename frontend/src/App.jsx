@@ -184,9 +184,19 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>Seat Booking System</h1>
+        <div className="brand">
+          <div className="brand-mark" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div>
+            <h1>Seatora</h1>
+            <p className="brand-label">EVENT SEATING</p>
+          </div>
+        </div>
         <p className="muted">
-          Single event · 10 × 12 seats · User ID {userId} · {availableCount} available
+          Single Event · Real-time Seat Availability · {availableCount} available
         </p>
       </header>
 

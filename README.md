@@ -1,259 +1,200 @@
-# Seat Booking System
+# Seatora
 
-Technical assessment project for **Compunet Connections**: a concurrent-safe ticket booking app for a single event with a fixed **10 × 12 (120 seat)** map.
+Seatora is a modern seat booking application for one event with a fixed **10 x 12 seat map**. Users can select up to four seats, hold them for five minutes, confirm a booking, or release the hold.
 
-## Overview
-
-Users view a seat map, select up to **4** available seats, place a **5-minute hold**, then confirm a booking or release the hold. The backend uses **MySQL InnoDB transactions** and **`SELECT ... FOR UPDATE`** so a seat can never be sold twice.
+The application uses MySQL transactions and row-level locks to prevent two users from holding or booking the same seat at the same time.
 
 ## Features
 
-- 120 seats (A1–J12) with derived statuses: `available`, `held`, `booked`
-- Atomic all-or-nothing multi-seat holds (1–4 seats)
-- 5-minute holds with lazy server-side expiration
-- Booking confirmation with unique references (`BOOK-XXXXXX`)
-- React seat map with selection, countdown, release/confirm, and 2s polling
-- pytest suite including real concurrent MySQL hold/confirm tests
+- 120 seats, from `A1` to `J12`
+- Real-time seat status polling every two seconds
+- Atomic holds for one to four seats
+- Five-minute holds with server-side expiration
+- Booking confirmation with unique references such as `BOOK-ADA78B`
+- Responsive React interface
+- Concurrency tests using real MySQL locking
 
-## Tech Stack
+## Technology
 
-| Layer | Technology |
-|-------|------------|
-| Backend | Python 3.11+, FastAPI, SQLAlchemy 2.x, Pydantic, PyMySQL |
-| Database | MySQL 8+ |
-| Frontend | React, Vite, JavaScript |
-| Tests | pytest, httpx, ThreadPoolExecutor |
+- Backend: Python 3.11+, FastAPI, SQLAlchemy, Pydantic, PyMySQL
+- Database: MySQL 8+ with InnoDB
+- Frontend: React and Vite
+- Tests: pytest, httpx, and ThreadPoolExecutor
 
-## Architecture
+## Prerequisites
 
-```text
-Browser (React)  --HTTP/JSON-->  FastAPI  --SQLAlchemy-->  MySQL 8 (InnoDB)
-                     ^
-                     |  poll GET /seats every 2s
-```
+Install the following before starting:
 
-- **Routers** expose HTTP endpoints.
-- **Services** own transactions, locking, and business rules.
-- Seat status is **derived** from holds/bookings (not a mutable column on `seats`).
+- Python 3.11 or newer
+- Node.js 18 or newer and npm
+- MySQL 8 or newer
+- Git, if cloning the repository
 
-## Project Structure
+## 1. Create the MySQL databases
 
-```text
-seat-booking/
-├── backend/
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── config.py
-│   │   ├── database.py
-│   │   ├── models.py
-│   │   ├── schemas.py
-│   │   ├── routers/
-│   │   ├── services/
-│   │   └── utils/
-│   ├── tests/
-│   ├── seed.py
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/
-│   └── src/
-├── README.md
-├── PROMPTS.md
-└── .gitignore
-```
-
-## Database Schema
-
-### `seats`
-Physical seats. Unique `(row_label, seat_number)` and unique `label` (e.g. `A1`).
-
-### `holds`
-Temporary reservations. Status: `ACTIVE`, `EXPIRED`, `RELEASED`, `CONFIRMED`. `expires_at` is authoritative.
-
-### `hold_seats`
-Join table linking a hold to 1–4 seats. PK `(hold_id, seat_id)`.
-
-### `bookings`
-Permanent confirmation of a hold. `hold_id` is unique (one booking per hold). `booking_reference` is unique.
-
-## Setup Instructions
-
-### 1. Clone / open the project
-
-```bash
-cd seat-booking
-```
-
-### 2. MySQL
-
-Create databases:
+Open MySQL Workbench or the MySQL command-line client and run:
 
 ```sql
-CREATE DATABASE seat_booking CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE DATABASE seat_booking_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE IF NOT EXISTS seat_booking1
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE DATABASE IF NOT EXISTS seat_booking_test1
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-### 3. Backend
+The application uses `seat_booking1`. The test suite uses `seat_booking_test1`.
 
-```bash
+## 2. Configure and start the backend
+
+From the project root, open a PowerShell terminal:
+
+```powershell
 cd backend
 python -m venv .venv
-```
-
-Windows:
-
-```bash
-.venv\Scripts\activate
-```
-
-macOS/Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-```bash
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-copy .env.example .env
+Copy-Item .env.example .env
 ```
 
-Edit `.env` with your MySQL credentials:
+Open `backend/.env` and set your MySQL username and password. Keep the database names as follows:
 
 ```text
-DATABASE_URL=mysql+pymysql://root:password@localhost:3306/seat_booking
-TEST_DATABASE_URL=mysql+pymysql://root:password@localhost:3306/seat_booking_test
+DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@localhost:3306/seat_booking1
+TEST_DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@localhost:3306/seat_booking_test1
+HOLD_DURATION_SECONDS=300
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
-Seed seats (idempotent):
+If your MySQL password contains URL characters such as `#`, `@`, `/`, or `:`, URL-encode the password before placing it in `DATABASE_URL`. For example, `#` becomes `%23`.
 
-```bash
+Create the tables and seed the 120 seats:
+
+```powershell
+$env:PYTHONPATH = "."
 python seed.py
 ```
 
-Run API:
+Start the API and leave this terminal running:
 
-```bash
+```powershell
 uvicorn app.main:app --reload
 ```
 
-API docs: http://127.0.0.1:8000/docs
+The backend is available at:
 
-### 4. Frontend
+- API: http://127.0.0.1:8000
+- Health check: http://127.0.0.1:8000/health
+- Swagger documentation: http://127.0.0.1:8000/docs
 
-```bash
+You should see `{"status":"ok"}` from the health check.
+
+## 3. Start the frontend
+
+Open a second terminal from the project root:
+
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173
+Open the URL printed by Vite, normally:
 
-Vite proxies API calls to the FastAPI server.
+http://localhost:5173
 
-## API
+The Vite development server proxies API requests to the FastAPI server on port 8000.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/seats` | All seats + derived status |
-| `POST` | `/holds` | Atomic hold (1–4 seats), 5 minutes |
-| `DELETE` | `/holds/{id}?user_id=` | Release hold |
-| `POST` | `/bookings` | Confirm hold → booking |
-| `GET` | `/bookings` | List bookings |
+## Using the application
 
-## Concurrency and Double-Booking Prevention
+1. Select one to four green available seats.
+2. Click **Hold Selected Seats**.
+3. Confirm the booking before the five-minute timer expires, or release the hold.
+4. Confirmed bookings are stored in the `bookings` table.
 
-### Problem
+Check stored data in MySQL with:
 
-This pattern is unsafe under concurrency:
+```sql
+USE seat_booking1;
 
-```text
-check availability
-insert hold
+SELECT * FROM seats;
+SELECT * FROM holds;
+SELECT * FROM hold_seats;
+SELECT * FROM bookings;
 ```
 
-Two transactions can both observe a seat as free, then both insert holds → **double booking**.
+Released and expired holds remain in the database for history. Their status changes to `RELEASED` or `EXPIRED`.
 
-### Solution
+## API endpoints
 
-Holds run inside a MySQL transaction:
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Check that the API is running |
+| `GET` | `/seats` | Return all seats and their current status |
+| `POST` | `/holds` | Create an atomic hold for one to four seats |
+| `DELETE` | `/holds/{hold_id}?user_id={user_id}` | Release a hold |
+| `POST` | `/bookings` | Confirm a hold as a booking |
+| `GET` | `/bookings` | List confirmed bookings |
 
-1. Start transaction
-2. Sort requested seat IDs (deterministic lock order)
-3. `SELECT ... FROM seats WHERE id IN (...) ORDER BY id FOR UPDATE`
-4. Lazy-expire overdue holds that touch those seats
-5. Recheck booked / actively held while locks are held
-6. If any seat is unavailable → `ROLLBACK` → HTTP 409
-7. Else insert hold + hold_seats → `COMMIT` → HTTP 201
+## Run the tests
 
-### Example
+Make sure MySQL is running and `backend/.env` contains a valid `TEST_DATABASE_URL`. From `backend/`:
 
-```text
-Transaction A                    Transaction B
-     ↓                                ↓
-locks seat 1                     tries to lock seat 1
-     ↓                                ↓
-checks availability                   WAITS
-     ↓
-creates hold
-     ↓
-COMMIT
-                                      ↓
-                                 obtains lock
-                                      ↓
-                                 sees seat held
-                                      ↓
-                                 ROLLBACK → 409
-```
-
-Exactly one request succeeds. Deterministic `ORDER BY id` reduces deadlocks when requests lock overlapping seats in different request orders (e.g. `[A2,A1]` vs `[A1,A2]`).
-
-Booking confirmation locks the hold row with `FOR UPDATE` and also relies on `UNIQUE(hold_id)` on `bookings`.
-
-## Hold Expiration
-
-- Every hold lasts **5 minutes** (`HOLD_DURATION_SECONDS=300`).
-- The **backend/database clock** is authoritative.
-- The frontend countdown is **display only**.
-- **Lazy expiration**: on seat reads and hold/booking writes, `ACTIVE` holds with `expires_at <= NOW()` are marked `EXPIRED`.
-- No background worker is required for this assessment.
-
-## Polling
-
-The frontend polls `GET /seats` every **2 seconds** (`POLL_INTERVAL = 2000` in `App.jsx`).
-
-We chose a 2-second polling interval because this is a small assessment application and polling is significantly simpler than introducing WebSockets. It provides near-real-time seat updates while keeping implementation and infrastructure simple.
-
-In production, WebSockets or Server-Sent Events could replace polling.
-
-## Testing
-
-From `backend/` with MySQL `seat_booking_test` configured:
-
-```bash
+```powershell
+\.venv\Scripts\Activate.ps1
+$env:PYTHONPATH = "."
 pytest -v
 ```
 
-Important concurrency tests (`tests/test_concurrency.py`):
+The concurrency tests require MySQL. SQLite is not an equivalent replacement because its locking behavior differs from InnoDB.
 
-- Two threads hold the **same seat** → assert exactly **one** `201` and one `409`
-- Two threads confirm the **same hold** → assert exactly **one** booking
+## Troubleshooting
 
-These run against **MySQL** (not SQLite). SQLite locking is different and would not prove InnoDB correctness. Tests use separate SQLAlchemy sessions on threads so real row-lock contention occurs.
+### `Unknown database`
 
-## Future Improvements
+Run the database creation SQL from step 1 and check that the database name in `.env` is exactly `seat_booking1`.
 
-Not implemented (intentionally):
+### `Unknown column` or missing table errors
 
-- Authentication / authorization
-- Multiple events / venues
-- WebSockets or SSE
-- Background cleanup worker
-- Alembic migrations
-- Structured logging and monitoring
-- Rate limiting
-- Load testing
-- Production deployment hardening
-- Richer UI/UX
+Run `python seed.py` from the `backend` directory. The project expects a schema created from the current SQLAlchemy models. `create_all()` does not migrate an old schema.
 
-## AI Usage
+### Frontend cannot load seats
 
-Development used AI assistance. See [`PROMPTS.md`](PROMPTS.md) for an honest prompt/decision log.
+Confirm both servers are running, then visit http://127.0.0.1:8000/health. If it does not return `{"status":"ok"}`, restart the backend from the activated virtual environment.
+
+### PowerShell blocks activation
+
+Run PowerShell as your normal user and execute:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Then activate the environment again.
+
+## Project structure
+
+```text
+seat-booking/
+├── backend/
+│   ├── app/
+│   │   ├── routers/
+│   │   ├── services/
+│   │   ├── config.py
+│   │   ├── database.py
+│   │   ├── models.py
+│   │   └── schemas.py
+│   ├── tests/
+│   ├── seed.py
+│   ├── requirements.txt
+│   └── .env.example
+├── frontend/
+│   ├── src/
+│   ├── package.json
+│   └── vite.config.js
+├── README.md
+└── PROMPTS.md
+```
+
+## Important production considerations
+
+This is an assessment and portfolio project. Before production use, add authentication, authorization, database migrations with Alembic, structured logging, monitoring, rate limiting, deployment configuration, and HTTPS.

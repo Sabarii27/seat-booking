@@ -198,3 +198,4 @@ seat-booking/
 ## Important production considerations
 
 This is an assessment and portfolio project. Before production use, add authentication, authorization, database migrations with Alembic, structured logging, monitoring, rate limiting, deployment configuration, and HTTPS.
+
